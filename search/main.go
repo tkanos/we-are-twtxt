@@ -152,7 +152,7 @@ func main() {
 
 			atomic.AddInt64(&index, 1)
 			if index%100 == 0 {
-				fmt.Printf("[%d/%d] status \n", index, len(links))
+				fmt.Printf("[%d/%d] status\n", index, len(links))
 			}
 			wg.Done()
 		}(url)
@@ -208,7 +208,7 @@ func fetchHttp(url string) (map[string]*Twtxt, []string) {
 		return nil, nil
 	}
 
-	req.Header.Set("User-Agent", fmt.Sprint("twx/{0.1.0 (+crawler; @https://github.com/tkanos/we-are-twtxt)"))
+	req.Header.Set("User-Agent", "twx/0.1.0 (+https://github.com/tkanos/we-are-twtxt; @we-are-twtxt-crawler)")
 
 	res, err := client.Do(req)
 	if err != nil {
