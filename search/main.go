@@ -182,11 +182,16 @@ func main() {
 	stdM := twtxts.MentionStd()
 
 	for k, v := range twtxts.twtxts {
-		fmt.Fprintf(wAcc, "%s\n", k)
+
 		if v.Alive {
 			fmt.Fprintf(wAct, "%s\n", k)
 		}
-		fmt.Fprintf(wRank, "%s;%v\n", k, (v.MentionsSum()-avgM)/stdM)
+
+		if v.Accessible {
+			fmt.Fprintf(wAcc, "%s\n", k)
+			fmt.Fprintf(wRank, "%s;%v\n", k, (v.MentionsSum()-avgM)/stdM)
+		}
+
 	}
 
 	wAcc.Flush()
@@ -281,8 +286,6 @@ func parseBody(link string, body []byte) (map[string]*Twtxt, []string) {
 
 			if !ok {
 				twtxt := NewTwtxt(newlink)
-				twtxt.Alive = alive
-				twtxt.Accessible = true
 				twtxt.MentionsperYear[year] = 1
 
 				lock.Lock()
