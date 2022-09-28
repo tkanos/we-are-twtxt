@@ -158,7 +158,7 @@ func main() {
 		}(url)
 	}
 
-	accessible, err := os.Create(home + "/accesssible.csv")
+	accessible, err := os.Create(home + "/accessible.csv")
 	if err != nil {
 		return
 	}
@@ -315,7 +315,7 @@ func parseBody(link string, body []byte) (map[string]*Twtxt, []string) {
 	return twtxts.twtxts, links
 }
 
-var re = regexp.MustCompile(`^(([0-9]{4})\-[0-9]{2}\-[0-9]{2}){0,1}.*((http|gemini|gopher).+[a-z|A-Z]/twtxt\.txt).*$`)
+var re = regexp.MustCompile(`^(([0-9]{4})\-[0-9]{2}\-[0-9]{2}){0,1}.*((http|gemini|gopher)[^ ]+\/twtxt\.txt).*$`)
 
 //var re = regexp.MustCompile(`^.*((http|gemini|gopher).+[a-z|A-Z]/twtxt\.txt).*$`)
 
