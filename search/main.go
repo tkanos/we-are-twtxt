@@ -326,7 +326,7 @@ func parseLine(line string) (link string, year string, err error) {
 		return "", "", nil
 	}
 
-	if !strings.Contains(groups[3], "feeds.twtxt.net") {
+	if !strings.Contains(groups[3], "feeds.twtxt.net") && !strings.Contains(groups[3], "feeds.twtxt.cc") {
 		return groups[3], groups[2], nil
 	}
 
