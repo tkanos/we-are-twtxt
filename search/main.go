@@ -11,23 +11,27 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/makeworld-the-better-one/go-gemini"
 )
-
-var index = 0
 
 var client *http.Client
 
 type Twtxts struct {
 	twtxts     map[string]*Twtxt
-	Mentions   int
-	Tweets     int
-	BytesTotal int
+	Mentions   int64
+	Tweets     int64
+	BytesTotal int64
 }
 
 var twtxts Twtxts
 var links []string
+
+var ch chan string
+var lock sync.RWMutex
 
 func init() {
 	client = getHTTPClient()
@@ -35,9 +39,11 @@ func init() {
 	startingTwtxt := "https://niplav.github.io/twtxt.txt"
 
 	twtxts = Twtxts{
-		twtxts: map[string]*Twtxt{startingTwtxt: NewTwtxt(startingTwtxt)},
+		twtxts: map[string]*Twtxt{startingTwtxt: NewTwtxt("startingTwtxt")},
 	}
-	links = []string{startingTwtxt}
+	//links = []string{startingTwtxt}
+	ch = make(chan string, 30)
+	ch <- startingTwtxt
 }
 
 func (ts Twtxts) MentionStd() float64 {
@@ -118,11 +124,20 @@ func main() {
 
 	home, _ := os.UserHomeDir()
 
-	index = 0
-	for true {
-		if len(links) > index {
-			url := links[index]
-			fmt.Println(url)
+	start := time.Now()
+
+	var wg sync.WaitGroup
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	var index int64 = 0
+	for url := range ch {
+		wg.Add(1)
+		links = append(links, url)
+		fmt.Println(url)
+		go func(url string) {
 			if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
 				fetchHttp(url)
 			}
@@ -135,13 +150,12 @@ func main() {
 				//fetchGopher(url)
 			}
 
-			index++
+			atomic.AddInt64(&index, 1)
 			if index%100 == 0 {
 				fmt.Printf("[%d/%d] status \n", index, len(links))
 			}
-		} else {
-			break
-		}
+			wg.Done()
+		}(url)
 	}
 
 	accessible, err := os.Create(home + "/accesssible.csv")
@@ -166,22 +180,20 @@ func main() {
 	wRank := bufio.NewWriter(rank)
 	avgM := twtxts.MentionAvg()
 	stdM := twtxts.MentionStd()
-	avgT := twtxts.TweetsAvg()
-	stdT := twtxts.TweetsStd()
 
 	for k, v := range twtxts.twtxts {
 		fmt.Fprintf(wAcc, "%s\n", k)
 		if v.Alive {
 			fmt.Fprintf(wAct, "%s\n", k)
 		}
-		fmt.Fprintf(wRank, "%s;%v;%v;%v;%v\n", k, (v.MentionsSum()-avgM)/stdM, v.MentionsSum()-avgM, (v.TweetsSum()-avgT)/stdT, ((v.MentionsSum()-avgM)/stdM)*((v.TweetsSum()-avgT)/stdT))
+		fmt.Fprintf(wRank, "%s;%v\n", k, (v.MentionsSum()-avgM)/stdM)
 	}
 
 	wAcc.Flush()
 	wAct.Flush()
 	wRank.Flush()
 
-	fmt.Printf("we went through %v links, downloaded %v Mb in %v\n", twtxts.SumUsers(), twtxts.BytesTotal/1024/1024)
+	fmt.Printf("we went through %v links, downloaded %v Mb in %v\n", twtxts.SumUsers(), twtxts.BytesTotal/1024/1024, time.Since(start))
 
 }
 
@@ -211,6 +223,7 @@ func fetchHttp(url string) (map[string]*Twtxt, []string) {
 	if err != nil {
 		return nil, nil
 	}
+	atomic.AddInt64(&twtxts.BytesTotal, int64(len(b)))
 
 	parseBody(url, b)
 
@@ -227,13 +240,13 @@ func fetchGemini(url string) (map[string]*Twtxt, []string) {
 	if res.Status > 200 {
 		return nil, nil
 	}
+	twtxts.twtxts[url].Accessible = true
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return nil, nil
-	} else {
-		twtxts.twtxts[url].Accessible = true
 	}
+	atomic.AddInt64(&twtxts.BytesTotal, int64(len(body)))
 
 	parseBody(url, body)
 
@@ -253,21 +266,32 @@ func parseBody(link string, body []byte) (map[string]*Twtxt, []string) {
 		if !alive && year == "2022" {
 			alive = true
 		}
-		if err != nil {
+
+		if err == nil {
+
+			lock.Lock()
 			twtxts.twtxts[link].TwtsPerYear[year]++
-			twtxts.Tweets++
+			lock.Unlock()
+			atomic.AddInt64(&twtxts.Tweets, 1)
 		}
 		if err == nil && newlink != "" {
-			if _, ok := twtxts.twtxts[newlink]; !ok {
+			lock.RLock()
+			_, ok := twtxts.twtxts[newlink]
+			lock.RUnlock()
+
+			if !ok {
 				twtxt := NewTwtxt(newlink)
 				twtxt.Alive = alive
 				twtxt.Accessible = true
 				twtxt.MentionsperYear[year] = 1
+
+				lock.Lock()
 				twtxts.twtxts[newlink] = twtxt
+				lock.Unlock()
 
-				twtxts.Mentions++
+				atomic.AddInt64(&twtxts.Mentions, 1)
 
-				links = append(links, newlink)
+				ch <- newlink
 			} else {
 				if alive {
 					twtxts.twtxts[link].Alive = true
@@ -275,11 +299,12 @@ func parseBody(link string, body []byte) (map[string]*Twtxt, []string) {
 				}
 
 				if newlink != "" {
+					lock.Lock()
 					twtxts.twtxts[newlink].MentionsperYear[year]++
-					twtxts.Mentions++
+					lock.Unlock()
+					atomic.AddInt64(&twtxts.Mentions, 1)
 				}
 			}
-
 		}
 
 	}
